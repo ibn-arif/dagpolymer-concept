@@ -363,7 +363,7 @@
       <div class="col7">
         <div class="label reveal">[ 02 — Экструзия ]</div>
         <h2 class="h-big reveal" style="--delay:.1s">Цепи вытягиваются<br>в плёнку.</h2>
-        <p class="lead reveal" style="--delay:.2s">Листайте дальше — и хаотичные клубки макромолекул выстраиваются в ровные ряды. Так рождается плёнка: экструзия ориентирует цепи полиэтилена, и материал набирает прочность и растяжимость.</p>
+        <p class="lead reveal" style="--delay:.2s">Листайте дальше — клубки макромолекул затягивает в экструдер. Из щелевой головки цепи выходят выпрямленными, вытягиваются и застывают тонкой прозрачной плёнкой: так она набирает прочность и растяжимость.</p>
       </div>
       <div class="col5 reveal" style="--delay:.25s">
         <div class="cards">
@@ -598,6 +598,9 @@ function createPolymerField({ container, canvas, onReady }) {
   const A = new Float32Array(NC * 3);
   const HP = new Float32Array(NH * 3);
   const vis = new Float32Array(NC).fill(1);  // per-atom visual scale (fade near lens)
+  const T = new Float32Array(NC * 3);        // extrusion targets (bond rest lengths follow them)
+  const VS = new Float32Array(NC).fill(1);   // extrusion visibility (hidden inside the barrel)
+  const lastPhase = new Float32Array(CHAINS);
   const frame = new Float32Array(NC * 6);    // per-carbon normal + binormal for hydrogens
 
   /* ---------- Entrance: chains parked far away, then fly in ---------- */
@@ -664,16 +667,137 @@ function createPolymerField({ container, canvas, onReady }) {
   const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
   /* ---------- Target layouts ---------- */
-  // Extrusion: chains drawn out into parallel rows — a sheet of oriented film.
-  const stretchTarget = (c, j, t, out) => {
-    // the sheet lies low and recedes in depth, like film leaving the die
-    const k = c - (CHAINS - 1) / 2;
-    const span = Math.min(viewportWidth * 0.94, BOND * 1.95 * (PER - 1));
-    const x = (j / (PER - 1) - 0.5) * span;
-    const wave = Math.sin(x * 0.55 - t * 1.4 + c * 0.18) * 0.22 + Math.sin(x * 1.3 + t * 0.9) * 0.05;
+  // Extrusion: melt is pushed through a slot die; chains leave it straightened,
+  // are drawn down (bonds lengthen) and travel along the freshly cast film.
+  const LANES = Math.max(2, Math.round(CHAINS / 2));
+  const RANKS = Math.ceil(CHAINS / LANES);
+  const DRAW = 1.9;     // draw-down ratio far from the die
+  const FLOW = 0.62;    // melt speed, chain-length units per second
+  const LANE_Y = 0.13, LANE_Z = -0.42; // film width runs up and away from the camera
+  const ext = { dieX: 0, baseY: 0, xEnd: 0, L: 1, scale: 1 };
+  const updateExtruder = (stretchF) => {
+    const slide = easeOutCubic(clamp01(stretchF * 1.15));
+    const tall = viewportWidth < viewportHeight;
+    ext.scale = tall ? 0.62 : 1; // phones: a smaller line so the film gets most of the width
+    const restX = tall ? -viewportWidth * 0.44 : -viewportWidth * 0.32;
+    ext.baseY = -viewportHeight * (tall ? 0.36 : 0.3);
+    ext.dieX = restX - (1 - slide) * viewportWidth * 0.5;
+    ext.xEnd = viewportWidth / 2 + 0.6;
+    ext.L = (ext.xEnd + 1 - restX) / DRAW + PER * BOND + 0.6;
+  };
+  const filmSurface = (x, w, t, out) => {
+    const amp = smoothstep(0, 2.2, x - ext.dieX); // flat as it leaves the lips, ripples further out
     out[0] = x;
-    out[1] = -viewportHeight * 0.3 + k * 0.13 + wave + (j % 2 ? 0.06 : -0.06);
-    out[2] = -k * 0.42 + Math.cos(x * 0.5 - t * 1.4) * 0.2;
+    out[1] = ext.baseY + w * LANE_Y * ext.scale + (Math.sin(x * 0.55 - t * 1.4) * 0.2 + Math.sin(x * 1.3 + t * 0.9 + w * 0.4) * 0.05) * amp;
+    out[2] = w * LANE_Z * ext.scale + Math.cos(x * 0.5 - t * 1.4) * 0.18 * amp;
+  };
+  // material coordinate a (0 = die lips) → x; inside the barrel the melt is compressed
+  const materialToX = (a) => a >= 0
+    ? ext.dieX + a * DRAW - (DRAW - 1) * 1.5 * (1 - Math.exp(-a / 1.5))
+    : ext.dieX + Math.max(a * 0.25, -1.4);
+  const chainPhase = (c, t) => (t * FLOW / ext.L + ((c / LANES) | 0) / RANKS + (c % LANES) * 0.137) % 1;
+  // writes the target and returns how visible the atom is (0 inside the barrel / past the screen)
+  const stretchTarget = (c, j, t, out) => {
+    const a = chainPhase(c, t) * ext.L - j * BOND;
+    const x = materialToX(a);
+    const w = (c % LANES) - (LANES - 1) / 2 + (((c / LANES) | 0) % 2 ? 0.18 : -0.18);
+    filmSurface(x, w, t, out);
+    const conv = smoothstep(0.2, -0.8, a); // converge onto the barrel axis
+    out[1] = lerp(out[1], ext.baseY, conv) + (j % 2 ? 0.06 : -0.06) * (1 - conv);
+    out[2] = lerp(out[2], 0, conv);
+    // further from the die the chains dissolve into the solid film
+    const span = ext.xEnd - ext.dieX;
+    return smoothstep(-0.1, 0.25, a) * (1 - smoothstep(ext.dieX + span * 0.36, ext.dieX + span * 0.68, x));
+  };
+
+  /* ---------- Extruder hardware + film ---------- */
+  const steel = new THREE.MeshPhysicalMaterial({ color: '#d3d9e2', metalness: 0.45, roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.15 });
+  const heater = new THREE.MeshPhysicalMaterial({ color: '#2a2f38', metalness: 0.3, roughness: 0.45, clearcoat: 0.4 });
+  const slotMat = new THREE.MeshBasicMaterial({ color: '#0b0e14' });
+  const extruder = new THREE.Group();
+  const barrelLen = 14;
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, barrelLen, 48), steel);
+  barrel.rotation.z = Math.PI / 2;
+  barrel.position.x = -barrelLen / 2 - 0.3;
+  extruder.add(barrel);
+  for (let k = 0; k < 6; k++) {
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.3, 48), heater);
+    band.rotation.z = Math.PI / 2;
+    band.position.x = -1.0 - k * 1.15;
+    extruder.add(band);
+  }
+  const laneDir = new THREE.Vector3(0, LANE_Y, LANE_Z);
+  const dieLen = (LANES + 0.6) * laneDir.length();
+  const die = new THREE.Group();
+  die.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), laneDir.clone().normalize());
+  const dieBody = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.7, dieLen), steel);
+  dieBody.position.x = -0.02;
+  const dieTop = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.08, dieLen + 0.04), heater);
+  dieTop.position.set(-0.02, 0.39, 0);
+  const slot = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.05, dieLen - 0.3), slotMat);
+  slot.position.x = 0.3;
+  die.add(dieBody, dieTop, slot);
+  extruder.add(die);
+  extruder.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  extruder.visible = false;
+  scene.add(extruder);
+
+  const FSX = 96, FSW = 6;
+  const filmGeo = new THREE.PlaneGeometry(1, 1, FSX, FSW);
+  const filmColors = new Float32Array((FSX + 1) * (FSW + 1) * 4).fill(1);
+  filmGeo.setAttribute('color', new THREE.BufferAttribute(filmColors, 4)); // rgba → alpha fade at both ends
+  const filmMat = new THREE.MeshPhysicalMaterial({
+    color: '#f4fbff', roughness: 0.08, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.04,
+    emissive: new THREE.Color('#eaf8ff'), emissiveIntensity: 0.5,
+    iridescence: 1, iridescenceIOR: 1.35, iridescenceThicknessRange: [180, 520], specularIntensity: 1,
+    vertexColors: true, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false,
+  });
+  const film = new THREE.Mesh(filmGeo, filmMat);
+  film.frustumCulled = false;
+  film.receiveShadow = true;
+  film.renderOrder = 2;
+  film.visible = false;
+  scene.add(film);
+  // bright selvedge lines make the clear film readable against the light background
+  const edgeMat = new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0 });
+  const edges = [0, 1].map(() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array((FSX + 1) * 3), 3));
+    const l = new THREE.Line(g, edgeMat);
+    l.frustumCulled = false;
+    l.renderOrder = 3;
+    scene.add(l);
+    return l;
+  });
+  const fv = [0, 0, 0];
+  const updateFilm = (stretchF, t) => {
+    const on = stretchF > 0.002;
+    film.visible = extruder.visible = edges[0].visible = edges[1].visible = on;
+    if (!on) return;
+    extruder.position.set(ext.dieX, ext.baseY, 0);
+    extruder.scale.setScalar(ext.scale);
+    filmMat.opacity = 0.62 * stretchF;
+    edgeMat.opacity = 0.9 * stretchF;
+    const x0 = ext.dieX + 0.31 * ext.scale;
+    const len = (ext.xEnd - x0) * smoothstep(0.05, 0.85, stretchF);
+    const pos = filmGeo.attributes.position.array;
+    for (let iw = 0; iw <= FSW; iw++) {
+      const w = (iw / FSW - 0.5) * LANES;
+      for (let ix = 0; ix <= FSX; ix++) {
+        const u = ix / FSX, k = iw * (FSX + 1) + ix;
+        filmSurface(x0 + u * len, w, t, fv);
+        pos[k * 3] = fv[0]; pos[k * 3 + 1] = fv[1]; pos[k * 3 + 2] = fv[2];
+        filmColors[k * 4 + 3] = (0.35 + 0.65 * smoothstep(0, 0.12, u)) * (1 - smoothstep(0.82, 1, u));
+        if (iw === 0 || iw === FSW) {
+          const ea = edges[iw ? 1 : 0].geometry.attributes.position.array;
+          ea[ix * 3] = fv[0]; ea[ix * 3 + 1] = fv[1]; ea[ix * 3 + 2] = fv[2];
+        }
+      }
+    }
+    edges[0].geometry.attributes.position.needsUpdate = edges[1].geometry.attributes.position.needsUpdate = true;
+    filmGeo.attributes.position.needsUpdate = true;
+    filmGeo.attributes.color.needsUpdate = true;
+    filmGeo.computeVertexNormals();
   };
   // Winding: every chain wraps once around a slowly spinning roll.
   const portrait = () => viewportWidth < viewportHeight;
@@ -751,6 +875,8 @@ function createPolymerField({ container, canvas, onReady }) {
       applyColors();
     }
 
+    updateExtruder(stretchF);
+
     if (localStarted) {
       const entranceT = easeOutCubic(clamp01((time - entranceStart) / 2.2));
       const attractionBoost = lerp(7.5, 1, entranceT);
@@ -771,6 +897,23 @@ function createPolymerField({ container, canvas, onReady }) {
       const repelR = down ? params.mouseRepelRadius * 1.4 : params.mouseRepelRadius;
       const repelF = (down ? params.mouseRepelForce * 1.7 : params.mouseRepelForce) * (1 + mouseSpeed * 3.2);
       const clusterStrength = params.centerAttractForce * attractionBoost * clusterActive;
+
+      // a chain that ran off the film re-enters the barrel: jump it there while it's invisible
+      if (stretchF > 0.3) {
+        for (let c = 0; c < CHAINS; c++) {
+          const ph = chainPhase(c, time);
+          if (ph < lastPhase[c] - 0.5) {
+            for (let j = 0; j < PER; j++) {
+              const i = (c * PER + j) * 3;
+              stretchTarget(c, j, time, tgt);
+              P[i] = Q[i] = tgt[0]; P[i + 1] = Q[i + 1] = tgt[1]; P[i + 2] = Q[i + 2] = tgt[2];
+            }
+          }
+          lastPhase[c] = ph;
+        }
+      } else {
+        for (let c = 0; c < CHAINS; c++) lastPhase[c] = chainPhase(c, time);
+      }
 
       // 1. FORCES + VERLET INTEGRATION
       for (let c = 0; c < CHAINS; c++) {
@@ -799,9 +942,13 @@ function createPolymerField({ container, canvas, onReady }) {
             az += (h[2] - z) * clusterStrength * 0.9;
           }
           if (stretchF > 0.001) {
-            stretchTarget(c, j, time, tgt);
-            const k = 0.06 * stretchF;
+            const v = stretchTarget(c, j, time, tgt);
+            T[i] = tgt[0]; T[i + 1] = tgt[1]; T[i + 2] = tgt[2];
+            VS[id] = lerp(1, v, stretchF);
+            const k = 0.07 * stretchF;
             ax += (tgt[0] - x) * k; ay += (tgt[1] - y) * k; az += (tgt[2] - z) * k;
+          } else {
+            VS[id] = 1;
           }
           if (shapeF > 0.001) {
             rollTarget(c, j, time, tgt);
@@ -834,12 +981,12 @@ function createPolymerField({ container, canvas, onReady }) {
       }
 
       // 2. CONSTRAINTS: covalent bonds, bond angle (~112°), excluded volume
-      const stretchRatio = Math.min(viewportWidth * 0.94, BOND * 1.95 * (PER - 1)) / ((PER - 1) * BOND);
       const rollL = (2 * Math.PI * rollR()) / PER;
-      let rest = BOND * lerp(1, stretchRatio, stretchF);
-      rest = lerp(rest, rollL, shapeF);
+      const rest = lerp(BOND, rollL, shapeF);
       const kBond = 0.9 * (1 - breakF);
-      const angleRest = rest * lerp(1.66, 1.97, orderF);
+      const angleRest = rest * lerp(1.66, 1.97, shapeF);
+      // during extrusion each bond's rest length is whatever the draw-down asks for
+      const tDist = (a, b) => Math.hypot(T[b] - T[a], T[b + 1] - T[a + 1], T[b + 2] - T[a + 2]);
       const kAngle = lerp(0.3, 0.12, orderF) * (1 - breakF);
       const collideScale = 0.5 * (1 - 0.9 * orderF) * (1 - flyF);
       const minD = COLLIDE * 2;
@@ -857,8 +1004,14 @@ function createPolymerField({ container, canvas, onReady }) {
         if (kBond > 0.001) {
           for (let c = 0; c < CHAINS; c++) {
             const base = c * PER;
-            for (let j = 0; j < PER - 1; j++) link((base + j) * 3, (base + j + 1) * 3, rest, kBond);
-            if (kAngle > 0.001) for (let j = 0; j < PER - 2; j++) link((base + j) * 3, (base + j + 2) * 3, angleRest, kAngle);
+            for (let j = 0; j < PER - 1; j++) {
+              const a = (base + j) * 3, b = a + 3;
+              link(a, b, stretchF > 0.001 ? lerp(rest, tDist(a, b), stretchF) : rest, kBond);
+            }
+            if (kAngle > 0.001) for (let j = 0; j < PER - 2; j++) {
+              const a = (base + j) * 3, b = a + 6;
+              link(a, b, stretchF > 0.001 ? lerp(angleRest, tDist(a, b), stretchF) : angleRest, kAngle);
+            }
           }
         }
         if (collideScale > 0.001) {
@@ -891,7 +1044,7 @@ function createPolymerField({ container, canvas, onReady }) {
       const contain = flyF < 0.5, zContain = flyF < 0.02;
       for (let id = 0; id < NC; id++) {
         const i = id * 3;
-        if (contain) {
+        if (contain && VS[id] > 0.02) { // hidden melt inside the barrel may sit off-screen
           if (P[i] < -xBound - R_C) { const v = P[i] - Q[i]; P[i] = -xBound - R_C; Q[i] = P[i] + v * params.rebound; }
           else if (P[i] > xBound + R_C) { const v = P[i] - Q[i]; P[i] = xBound + R_C; Q[i] = P[i] + v * params.rebound; }
           if (P[i + 1] - R_C < floorY) { const v = P[i + 1] - Q[i + 1]; P[i + 1] = floorY + R_C; Q[i + 1] = P[i + 1] + v * 0.3; }
@@ -906,6 +1059,7 @@ function createPolymerField({ container, canvas, onReady }) {
 
     // 4. VISUALS: carbons, hydrogens (local frame, parallel-transported), sticks
     const camZ = camera.position.z;
+    const atomScale = lerp(1, ext.scale, stretchF); // atoms shrink with the phone-sized extrusion line
     const [cA, hA, bA2] = mArr();
     for (let c = 0; c < CHAINS; c++) {
       nA.set(0, 0, 1);
@@ -921,7 +1075,7 @@ function createPolymerField({ container, canvas, onReady }) {
         nA.normalize();
         bA.crossVectors(tA, nA);
 
-        const s = flyF > 0.001 ? 1 - smoothstep(camZ - 2.6, camZ - 0.3, P[i + 2]) : 1;
+        const s = (flyF > 0.001 ? 1 - smoothstep(camZ - 2.6, camZ - 0.3, P[i + 2]) : 1) * VS[id] * atomScale;
         vis[id] = s;
         writeBall(cA, id, P[i], P[i + 1], P[i + 2], R_C * s);
 
@@ -935,18 +1089,20 @@ function createPolymerField({ container, canvas, onReady }) {
           const k = id * 2 + h, o = k * 3;
           HP[o] = P[i] + dx * CH; HP[o + 1] = P[i + 1] + dy * CH; HP[o + 2] = P[i + 2] + dz * CH;
           writeBall(hA, k, HP[o], HP[o + 1], HP[o + 2], R_H * s);
-          writeStick(bA2, NCC + k, P[i], P[i + 1], P[i + 2], HP[o], HP[o + 1], HP[o + 2], R_BOND_H * s);
+          writeStick(bA2, NCC + k, P[i], P[i + 1], P[i + 2], HP[o], HP[o + 1], HP[o + 2], R_BOND_H * s * s);
         }
       }
       for (let j = 0; j < PER - 1; j++) {
         const id = c * PER + j, i = id * 3;
         // C–C sticks thin out and vanish as the chain depolymerises
-        const s = Math.min(vis[id], vis[id + 1]) * (1 - breakF);
+        const sv = Math.min(vis[id], vis[id + 1]);
+        const s = sv * sv * (1 - breakF); // sticks vanish a bit ahead of the atoms
         writeStick(bA2, c * (PER - 1) + j, P[i], P[i + 1], P[i + 2], P[i + 3], P[i + 4], P[i + 5], R_BOND * s);
       }
     }
     carbons.instanceMatrix.needsUpdate = hydros.instanceMatrix.needsUpdate = bonds.instanceMatrix.needsUpdate = true;
 
+    updateFilm(stretchF, time);
     renderer.render(scene, camera);
     if (!reportedReady) { reportedReady = true; onReady(); }
   };
