@@ -1,0 +1,1130 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ДагПолимер — плёнка на уровне молекул</title>
+<meta name="description" content="Собственный завод в Каспийске. Стрейч, термоусадочная и тепличная плёнка — напрямую от производителя." />
+<meta name="theme-color" content="#0a5bd6" />
+<!-- concept preview: keep it out of search so it never competes with dagpolymer.com -->
+<meta name="robots" content="noindex, nofollow" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+<style>
+  :root {
+    --font-sans: "Onest", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+    --ink: #1d1d1f;
+    --ink-950: #0a0a0a;
+    --ink-700: #3a3a3f;
+    --ink-500: #6e6e73;
+    --ink-400: #9a9aa0;
+    --accent: #0e3083;
+    --action: #0a5bd6;
+    --eco: #1f9d4a;
+    --orb: radial-gradient(circle at 50% 30%, #4f8dfd 0%, #0a5bd6 55%, #061a4d 100%);
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-io: cubic-bezier(0.65, 0, 0.35, 1);
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; width: 100%; }
+  body {
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    font-family: var(--font-sans);
+    color: var(--ink);
+    background: #f5f7fb;
+  }
+  a { color: inherit; text-decoration: none; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+  svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+  ::selection { background: #cfe0fb; }
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(10, 91, 214, 0.18); border-radius: 99px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(10, 91, 214, 0.32); }
+
+  /* ---------- Background (cross-fading gradient layers) ---------- */
+  .bg { position: fixed; inset: 0; z-index: -10; }
+  .bg > div { position: absolute; inset: 0; opacity: 0; transition: opacity 1.2s var(--ease-io), background 1.2s var(--ease-io); }
+  .bg > div.on { opacity: 1; }
+  .bg .b1 { background: radial-gradient(circle at center, #ffffff 0%, #effbff 38%, #c4ecf8 100%); }
+  .bg .b2 { background: radial-gradient(circle at center, #ffffff 0%, #f0faf2 38%, #c9ead3 100%); }
+  /* faint molecular grid, like lab paper */
+  .bg::after {
+    content: ""; position: absolute; inset: 0; opacity: 0.35;
+    background-image: radial-gradient(rgba(14, 48, 131, 0.16) 1px, transparent 1.2px);
+    background-size: 28px 28px;
+    mask-image: radial-gradient(circle at center, transparent 30%, #000 100%);
+    -webkit-mask-image: radial-gradient(circle at center, transparent 30%, #000 100%);
+  }
+
+  #stage { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  #stage canvas { display: block; width: 100%; height: 100%; }
+
+  /* ---------- Loader ---------- */
+  .loader {
+    position: fixed; inset: 0; z-index: 100;
+    background: radial-gradient(circle at 50% 42%, #ffffff 0%, #eef3fd 45%, #d6e3fa 100%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px;
+    transition: opacity 0.55s var(--ease-io);
+  }
+  .loader.leaving { opacity: 0; pointer-events: none; }
+  .loader > * { opacity: 0; transform: translateY(18px); filter: blur(6px); }
+  .loader.in > * { animation: springIn 0.9s cubic-bezier(0.34, 1.35, 0.5, 1) forwards; }
+  .loader.in > *:nth-child(1) { animation-delay: 0.1s; }
+  .loader.in > *:nth-child(2) { animation-delay: 0.26s; }
+  .loader.in > *:nth-child(3) { animation-delay: 0.42s; }
+  .loader.in > *:nth-child(4) { animation-delay: 0.58s; }
+  @keyframes springIn { to { opacity: 1; transform: translateY(0); filter: blur(0); } }
+  .loader-mol { width: 120px; height: 34px; }
+  .loader-mol circle.c { fill: var(--action); }
+  .loader-mol circle.h { fill: #ffffff; stroke: rgba(10, 91, 214, 0.35); stroke-width: 1; }
+  .loader-mol line { stroke: rgba(10, 91, 214, 0.45); stroke-width: 2; stroke-linecap: round; }
+  .loader-mol g { opacity: 0.15; transition: opacity 0.3s; }
+  .loader-mol g.lit { opacity: 1; }
+  .loader-status { font: 400 10px/1 var(--font-mono); letter-spacing: 0.28em; text-transform: uppercase; color: #6b7bb5; }
+  .loader-bar { width: clamp(180px, 32vw, 280px); height: 2px; background: rgba(10, 91, 214, 0.14); border-radius: 99px; overflow: hidden; }
+  .loader-fill { height: 100%; width: 0; background: linear-gradient(90deg, #4f8dfd 0%, #0e3083 100%); box-shadow: 0 0 14px rgba(10, 91, 214, 0.55); border-radius: 99px; transition: width 0.45s var(--ease-out); }
+  .loader-count { font: 700 11px/1 var(--font-mono); letter-spacing: 0.1em; color: var(--accent); font-variant-numeric: tabular-nums; }
+
+  /* ---------- Header ---------- */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 30; height: 80px; padding: 0 24px;
+    display: flex; align-items: center; justify-content: space-between; pointer-events: none;
+    opacity: 0; transform: translateY(-16px); transition: opacity 0.8s var(--ease-out), transform 0.8s var(--ease-out);
+  }
+  .header > * { pointer-events: auto; }
+  body.revealed .header { opacity: 1; transform: none; }
+  .wordmark { display: flex; align-items: center; gap: 10px; font-weight: 900; font-size: 17px; letter-spacing: 0.2em; color: var(--ink-950); }
+  .wordmark-mark { width: 22px; height: 22px; }
+  .nav { display: none; gap: 44px; font-size: 14px; font-weight: 500; }
+  .nav a { transition: opacity 0.2s; }
+  .nav a:hover { opacity: 0.6; }
+  .controls { display: flex; align-items: center; gap: 10px; }
+  .glass-ic {
+    width: 40px; height: 40px; border-radius: 99px; display: grid; place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.4); background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+    box-shadow: inset 0 1.5px 2px rgba(255, 255, 255, 0.7), 0 8px 30px rgba(0, 0, 0, 0.04);
+    transition: background 0.2s;
+  }
+  .glass-ic:hover { background: rgba(255, 255, 255, 0.3); }
+  .pill {
+    display: inline-flex; align-items: center; gap: 12px; padding: 6px 6px 6px 20px; border-radius: 99px;
+    background: rgba(255, 255, 255, 0.12); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.1); border-top-color: rgba(255, 255, 255, 0.9); border-bottom-color: rgba(255, 255, 255, 0.85);
+    box-shadow: inset 0 1.5px 2px rgba(255, 255, 255, 0.7), 0 8px 30px rgba(0, 0, 0, 0.04);
+    font-size: 13px; font-weight: 500;
+  }
+  .pill { white-space: nowrap; }
+  @media (max-width: 767px) {
+    .header { padding: 0 16px; }
+    .wordmark { font-size: 14px; letter-spacing: 0.14em; gap: 8px; }
+    .pill { padding-left: 14px; gap: 8px; font-size: 12px; }
+    .orb { width: 28px !important; height: 28px !important; }
+    .controls { gap: 8px; }
+    .glass-ic { width: 36px; height: 36px; }
+  }
+  .orb { width: 32px; height: 32px; border-radius: 99px; background: var(--orb); color: #fff; display: grid; place-items: center; transition: transform 0.3s var(--ease-out); }
+  .pill:hover .orb { transform: scale(1.05); }
+  @media (min-width: 768px) {
+    .header { height: 96px; padding: 0 48px; }
+    .wordmark { font-size: 19px; }
+    .nav { display: flex; }
+    .controls { gap: 12px; }
+    .glass-ic { width: 44px; height: 44px; }
+    .pill { padding-left: 24px; font-size: 14px; }
+  }
+
+  /* ---------- Sections ---------- */
+  main { position: relative; z-index: 10; }
+  section { position: relative; min-height: 100svh; pointer-events: none; padding: 0 24px; }
+  section .auto, section h1, section h2, section p, section .cards, section .chip { pointer-events: auto; }
+  @media (min-width: 768px) { section { padding-left: 48px; padding-right: 48px; } }
+
+  .label { font: 500 11px/1.2 var(--font-mono); letter-spacing: 0.25em; text-transform: uppercase; color: var(--accent); opacity: 0.85; }
+  .h-big { font-weight: 500; letter-spacing: -0.035em; color: var(--ink-950); margin: 24px 0 0; font-size: 2.5rem; line-height: 1.0; }
+  .h-big, .lead, .hero h1, .hero-right p { text-shadow: 0 0 22px rgba(255,255,255,0.85), 0 0 2px rgba(255,255,255,0.6); }
+  .lead { font-size: 16px; font-weight: 500; line-height: 1.55; color: var(--ink-700); margin: 0; }
+  @media (min-width: 640px) { .h-big { font-size: 3.6rem; } }
+  @media (min-width: 768px) { .h-big { font-size: 76px; line-height: 0.95; } .lead { font-size: 19px; } }
+
+  /* hero */
+  .hero { display: flex; align-items: flex-end; padding-bottom: 48px; opacity: 0; transition: opacity 0.6s; }
+  body.revealed .hero { opacity: 1; }
+  .hero-row { width: 100%; display: flex; flex-direction: column; justify-content: space-between; gap: 32px; }
+  .hero-left { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+  .eyebrow { font-size: 12px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent); margin-bottom: 16px; }
+  .hero h1 { margin: 0; font-weight: 500; letter-spacing: -0.045em; color: var(--ink-950); font-size: 2.5rem; line-height: 0.95; }
+  .hero-right p { margin: 0; font-size: 15px; font-weight: 500; line-height: 1.35; }
+  .credit { margin-top: 20px; font: 400 10px/1.4 var(--font-mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-500); }
+  .scroll-cue { display: none; margin-top: 16px; align-items: center; gap: 8px; color: var(--ink-500); font: 400 10px/1 var(--font-mono); letter-spacing: 0.2em; text-transform: uppercase; animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+  .scroll-cue svg { width: 14px; height: 14px; }
+  @keyframes pulse { 50% { opacity: 0.5; } }
+  .rise { opacity: 0; transform: translateY(var(--y, 14px)); transition: opacity var(--d, 0.8s) var(--ease-out) var(--delay, 0s), transform var(--d, 0.8s) var(--ease-out) var(--delay, 0s); }
+  body.revealed .rise { opacity: 1; transform: none; }
+  @media (min-width: 640px) { .hero h1 { font-size: 3.75rem; } }
+  @media (min-width: 768px) {
+    .hero { padding-bottom: 56px; }
+    .hero-row { flex-direction: row; align-items: flex-end; }
+    .eyebrow { font-size: 14px; margin-bottom: 24px; }
+    .hero h1 { font-size: 88px; line-height: 0.98; }
+    .hero-right { width: 270px; flex-shrink: 0; }
+    .scroll-cue { display: flex; }
+  }
+
+  /* reveal */
+  .reveal { opacity: 0; transform: translateY(42px); filter: blur(8px); transition: opacity 1.5s var(--ease-out), transform 1.5s var(--ease-out), filter 1.5s var(--ease-out); transition-delay: var(--delay, 0s); }
+  .reveal.shown { opacity: 1; transform: none; filter: blur(0); }
+
+  /* 02 extrusion */
+  .s-extrude { display: flex; align-items: center; padding-top: 128px; padding-bottom: 160px; }
+  .grid12 { width: 100%; display: grid; grid-template-columns: 1fr; gap: 40px; align-items: start; }
+  .s-extrude .lead { margin-top: 32px; max-width: 32rem; }
+  .cards { display: flex; flex-direction: column; gap: 14px; }
+  .card { position: relative; border-radius: 1.4rem; padding: 1px; background: linear-gradient(to bottom, rgba(255,255,255,0.8), rgba(255,255,255,0.3), rgba(255,255,255,0.1)); box-shadow: 0 14px 40px -12px rgba(10, 91, 214, 0.18); transition: transform 0.4s var(--ease-out); }
+  .card:hover { transform: translateY(-2px); }
+  .card-in { position: relative; overflow: hidden; border-radius: 1.35rem; background: rgba(255, 255, 255, 0.25); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); padding: 20px 24px; }
+  .card-in::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(to right, transparent, rgba(255,255,255,0.9), transparent); }
+  .card-head { display: flex; align-items: center; gap: 10px; font: 400 10px/1 var(--font-mono); }
+  .card-head .k { text-transform: uppercase; letter-spacing: 0.2em; color: var(--ink-400); }
+  .card-head .dot { margin-left: auto; width: 7px; height: 7px; border-radius: 99px; background: radial-gradient(circle at 35% 30%, #4f8dfd, #0a5bd6); box-shadow: 0 0 8px rgba(10, 91, 214, 0.6); }
+  .card-v { margin-top: 12px; font-size: 18px; font-weight: 600; }
+  .card-d { margin-top: 4px; font-size: 13px; color: var(--ink-500); }
+  @media (min-width: 768px) { .s-extrude { padding-top: 160px; } }
+  @media (min-width: 1024px) {
+    .grid12 { grid-template-columns: repeat(12, 1fr); gap: 64px; }
+    .col7 { grid-column: span 7; } .col5 { grid-column: span 5; padding-top: 12px; }
+  }
+
+  /* 03 winding */
+  .s-wind { display: flex; flex-direction: column; justify-content: space-between; padding-top: 144px; padding-bottom: 144px; }
+  .s-wind .h-big { max-width: 42rem; }
+  .s-wind .bottom { align-self: flex-end; max-width: 24rem; text-align: left; }
+  .chip { margin-top: 28px; display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 99px; border: 1px solid rgba(255,255,255,0.55); background: rgba(255,255,255,0.35); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); color: var(--ink-700); font: 400 10px/1 var(--font-mono); letter-spacing: 0.2em; text-transform: uppercase; }
+  .chip svg { width: 14px; height: 14px; }
+  @media (min-width: 768px) { .s-wind { padding-top: 176px; padding-bottom: 176px; } .s-wind .bottom { text-align: right; } }
+
+  /* 04 cycle */
+  .s-cycle { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding-top: 144px; padding-bottom: 144px; }
+  .s-cycle .wrap { max-width: 48rem; }
+  .s-cycle .h-big { margin-top: 28px; font-size: 2.75rem; }
+  .s-cycle .lead { margin: 32px auto 0; max-width: 28rem; }
+  @media (min-width: 640px) { .s-cycle .h-big { font-size: 4.5rem; } }
+  @media (min-width: 768px) { .s-cycle .h-big { font-size: 86px; line-height: 0.95; } }
+
+  /* ---------- Footer ---------- */
+  footer { position: relative; z-index: 10; background: var(--ink-950); color: #fff; border-radius: 2.5rem 2.5rem 0 0; overflow: hidden; }
+  @media (min-width: 768px) { footer { border-radius: 4rem 4rem 0 0; } }
+  .bloom { position: absolute; border-radius: 99px; filter: blur(40px); pointer-events: none; }
+  .bloom.a { width: 28rem; height: 28rem; top: -8rem; right: -8rem; background: radial-gradient(circle, #0a5bd666 0%, transparent 65%); }
+  .bloom.b { width: 32rem; height: 32rem; bottom: -12rem; left: -10rem; background: radial-gradient(circle, #1f9d4a44 0%, transparent 65%); }
+  .marquee { position: relative; border-bottom: 1px solid rgba(255,255,255,0.1); padding: 20px 0; overflow: hidden; }
+  .track { display: inline-flex; white-space: nowrap; font-weight: 500; font-size: clamp(28px, 6vw, 64px); color: rgba(255,255,255,0.9); animation: marquee 26s linear infinite; }
+  .track span { display: inline-flex; align-items: center; }
+  .track .w { padding: 0 32px; }
+  .track .mono { width: clamp(22px, 3vw, 34px); height: clamp(22px, 3vw, 34px); }
+  @keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  .f-body { position: relative; padding: 64px 24px 40px; }
+  .f-grid { display: grid; grid-template-columns: 1fr; gap: 48px; }
+  .f-label { font: 400 11px/1 var(--font-mono); letter-spacing: 0.25em; text-transform: uppercase; color: rgba(255,255,255,0.4); }
+  .f-h { margin: 20px 0 0; font-weight: 500; font-size: 2.25rem; line-height: 0.95; letter-spacing: -0.03em; }
+  .mail { margin-top: 36px; display: inline-flex; align-items: center; gap: 16px; padding: 8px 8px 8px 28px; border-radius: 99px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); font-size: 16px; font-weight: 500; transition: background 0.2s; }
+  .mail:hover { background: rgba(255,255,255,0.1); }
+  .mail .orb { width: 40px; height: 40px; }
+  .mail .orb svg { transition: transform 0.4s var(--ease-out); }
+  .mail:hover .orb svg { transform: rotate(45deg); }
+  .phone { display: table; margin-top: 18px; font: 500 14px/1 var(--font-mono); letter-spacing: 0.06em; color: rgba(255,255,255,0.6); }
+  .phone:hover { color: #fff; }
+  .f-cols { display: grid; grid-template-columns: repeat(2, 1fr); gap: 32px; }
+  .f-col { opacity: 0; transform: translateY(24px); transition: opacity 0.7s var(--ease-out), transform 0.7s var(--ease-out); transition-delay: var(--delay, 0s); }
+  .f-col.shown { opacity: 1; transform: none; }
+  .f-col ul { list-style: none; margin: 20px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  .f-col li a { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; color: rgba(255,255,255,0.75); transition: color 0.2s; }
+  .f-col li a:hover { color: #fff; }
+  .f-col li a svg { width: 12px; height: 12px; opacity: 0; transform: translate(-4px, 4px); transition: all 0.3s var(--ease-out); }
+  .f-col li a:hover svg { opacity: 1; transform: none; }
+  .f-col .plain { font-size: 15px; color: rgba(255,255,255,0.5); line-height: 1.4; }
+  .f-bar { margin-top: 80px; padding-top: 28px; border-top: 1px solid rgba(255,255,255,0.1); display: flex; flex-wrap: wrap; gap: 20px; align-items: center; justify-content: space-between; }
+  .f-brand { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  .f-brand b { font-weight: 900; letter-spacing: 0.22em; }
+  .f-brand i { width: 6px; height: 6px; border-radius: 99px; background: var(--eco); }
+  .f-brand small { font: 400 11px/1.4 var(--font-mono); color: rgba(255,255,255,0.4); }
+  .socials { display: flex; gap: 10px; }
+  .socials a { width: 40px; height: 40px; border-radius: 99px; border: 1px solid rgba(255,255,255,0.15); display: grid; place-items: center; color: rgba(255,255,255,0.7); transition: color 0.2s, background 0.2s; }
+  .socials a:hover { color: #fff; background: rgba(255,255,255,0.06); }
+  @media (min-width: 640px) { .f-cols { grid-template-columns: repeat(3, 1fr); } }
+  @media (min-width: 768px) { .f-body { padding: 96px 48px 40px; } .f-h { font-size: 3.75rem; } .mail { font-size: 18px; } .f-bar { margin-top: 112px; } }
+  @media (min-width: 1024px) { .f-grid { grid-template-columns: repeat(12, 1fr); } .f-cta { grid-column: span 5; } .f-cols { grid-column: span 7; } }
+
+  /* ---------- Drawer ---------- */
+  .scrim { position: fixed; inset: 0; z-index: 40; background: rgba(10,10,10,0.2); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); opacity: 0; pointer-events: none; transition: opacity 0.4s; }
+  .scrim.open { opacity: 0.4; pointer-events: auto; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 50; width: 100%; padding: 32px; overflow-y: auto; background: rgba(255,255,255,0.95); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border-left: 1px solid #f2f2f4; transform: translateX(100%); transition: transform 0.7s cubic-bezier(0.22, 1.18, 0.36, 1); display: flex; flex-direction: column; }
+  .drawer.open { transform: none; }
+  @media (min-width: 640px) { .drawer { width: 420px; } }
+  .d-head { display: flex; align-items: center; justify-content: space-between; }
+  .d-title { display: flex; align-items: center; gap: 10px; font-weight: 900; font-size: 14px; letter-spacing: 0.2em; text-transform: uppercase; }
+  .d-close { width: 36px; height: 36px; border-radius: 99px; display: grid; place-items: center; border: 1px solid #ececef; }
+  .d-close:hover { background: #f5f5f7; }
+  .d-note { margin: 20px 0 0; font: italic 400 12px/1.6 var(--font-mono); color: var(--ink-400); }
+  .d-sec { margin-top: 32px; display: flex; align-items: center; gap: 8px; font: 700 10px/1 var(--font-mono); letter-spacing: 0.2em; text-transform: uppercase; }
+  .themes { margin-top: 16px; display: grid; gap: 10px; }
+  .theme { text-align: left; border-radius: 12px; border: 1px solid #ececef; padding: 16px; transition: all 0.3s var(--ease-out); background: #fff; }
+  .theme:hover { border-color: #d2d2d7; }
+  .theme.sel { background: var(--ink-950); color: #fff; border-color: var(--ink-950); transform: scale(1.02); }
+  .theme-top { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700; }
+  .theme-top i { width: 12px; height: 12px; border-radius: 99px; }
+  .theme p { margin: 6px 0 0; font-size: 10px; line-height: 1.5; opacity: 0.6; }
+  .d-foot { margin-top: auto; padding-top: 32px; }
+  .d-row { display: flex; justify-content: space-between; font: 400 9px/1 var(--font-mono); letter-spacing: 0.12em; color: var(--ink-400); padding: 8px 0; border-top: 1px solid #f2f2f4; }
+  .d-reset { margin-top: 16px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; border-radius: 12px; border: 1px solid #ececef; font: 700 10px/1 var(--font-mono); letter-spacing: 0.2em; text-transform: uppercase; }
+  .d-reset:hover { background: #f5f5f7; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .track { animation-duration: 80s; }
+    .reveal, .rise, .f-col { transition-duration: 0.01s !important; }
+  }
+</style>
+</head>
+<body>
+
+<!-- SVG icon sprite (lucide) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-sliders" viewBox="0 0 24 24"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></symbol>
+  <symbol id="i-upright" viewBox="0 0 24 24"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></symbol>
+  <symbol id="i-pointer" viewBox="0 0 24 24"><path d="m3 3 7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="m13 13 6 6"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></symbol>
+  <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></symbol>
+  <!-- monomer glyph for the ticker: C with two H -->
+  <symbol id="i-mono" viewBox="0 0 34 34"><line x1="17" y1="17" x2="7" y2="7" stroke="#ffffff55" stroke-width="2"/><line x1="17" y1="17" x2="27" y2="7" stroke="#ffffff55" stroke-width="2"/><circle cx="17" cy="17" r="7" fill="#0a5bd6"/><circle cx="7" cy="7" r="4" fill="#e9f1ff"/><circle cx="27" cy="7" r="4" fill="#e9f1ff"/></symbol>
+</svg>
+
+<div class="bg" aria-hidden="true"><div class="b0 on" id="bg0"></div><div class="b1" id="bg1"></div><div class="b2" id="bg2"></div></div>
+<div id="stage" aria-hidden="true"><canvas id="gl"></canvas></div>
+
+<!-- Loader -->
+<div class="loader" id="loader" role="status" aria-live="polite">
+  <svg class="loader-mol" viewBox="0 0 120 34" id="loaderMol" aria-hidden="true"></svg>
+  <div class="loader-status" id="loaderStatus">Синтез полимерной цепи</div>
+  <div class="loader-bar"><div class="loader-fill" id="loaderFill"></div></div>
+  <div class="loader-count" id="loaderCount">000%</div>
+</div>
+
+<!-- Header -->
+<header class="header">
+  <a class="wordmark" href="/">
+    <svg class="wordmark-mark" viewBox="0 0 22 22" aria-hidden="true">
+      <line x1="4" y1="15" x2="11" y2="7" stroke="#0e3083" stroke-width="2"/><line x1="11" y1="7" x2="18" y2="15" stroke="#0e3083" stroke-width="2"/>
+      <circle cx="4" cy="15" r="3.4" fill="#0a5bd6"/><circle cx="11" cy="7" r="3.4" fill="#0e3083"/><circle cx="18" cy="15" r="3.4" fill="#1f9d4a"/>
+    </svg>
+    ДАГПОЛИМЕР
+  </a>
+  <nav class="nav" aria-label="Основная навигация">
+    <a href="/products">Продукция</a><a href="/production">Производство</a><a href="/ecology">Экология</a><a href="/about">О компании</a><a href="/contacts">Контакты</a>
+  </nav>
+  <div class="controls">
+    <button class="glass-ic" id="openDrawer" aria-label="Настройки сцены"><svg class="i"><use href="#i-sliders"/></svg></button>
+    <a class="pill" href="/contacts">Получить КП <span class="orb"><svg class="i"><use href="#i-chev"/></svg></span></a>
+  </div>
+</header>
+
+<main>
+  <!-- 01 HERO -->
+  <section class="hero">
+    <div class="hero-row">
+      <div class="hero-left">
+        <div class="eyebrow rise" style="--delay:.15s">[ Завод полимерной плёнки · Каспийск ]</div>
+        <h1 class="rise" style="--y:22px;--delay:.28s;--d:1s">Прочность —<br>на уровне молекул.</h1>
+      </div>
+      <div class="hero-right rise" style="--delay:.45s">
+        <p>Собственный завод в Каспийске. Стрейч, термоусадочная и тепличная плёнка — напрямую от производителя.</p>
+        <div class="credit">© 2017–2026 — ДагПолимер</div>
+        <div class="scroll-cue"><svg class="i"><use href="#i-down"/></svg>Листайте</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 EXTRUSION -->
+  <section class="s-extrude">
+    <div class="grid12">
+      <div class="col7">
+        <div class="label reveal">[ 02 — Экструзия ]</div>
+        <h2 class="h-big reveal" style="--delay:.1s">Цепи вытягиваются<br>в плёнку.</h2>
+        <p class="lead reveal" style="--delay:.2s">Листайте дальше — и хаотичные клубки макромолекул выстраиваются в ровные ряды. Так рождается плёнка: экструзия ориентирует цепи полиэтилена, и материал набирает прочность и растяжимость.</p>
+      </div>
+      <div class="col5 reveal" style="--delay:.25s">
+        <div class="cards">
+          <div class="card"><div class="card-in"><div class="card-head"><span>01</span><span class="k">Растяжение</span><span class="dot"></span></div><div class="card-v">до 300%</div><div class="card-d">Стрейч-плёнка плотно фиксирует груз на паллете</div></div></div>
+          <div class="card"><div class="card-in"><div class="card-head"><span>02</span><span class="k">Толщина</span><span class="dot"></span></div><div class="card-v">17–200 мкм</div><div class="card-d">Стрейч, термоусадочная и тепличная плёнка</div></div></div>
+          <div class="card"><div class="card-in"><div class="card-head"><span>03</span><span class="k">Объём</span><span class="dot"></span></div><div class="card-v">3 000+ тонн в год</div><div class="card-d">Производство работает 24/7, заказ — от 3 дней</div></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 WINDING -->
+  <section class="s-wind">
+    <div>
+      <div class="label reveal">[ 03 — Намотка ]</div>
+      <h2 class="h-big reveal" style="--delay:.1s">Из хаоса —<br>в рулон.</h2>
+    </div>
+    <div class="bottom">
+      <p class="lead reveal" style="--delay:.15s">Ориентированные цепи ложатся виток за витком, как на линии намотки. Проведите курсором сквозь рулон — связи растянутся, атомы разлетятся и снова встанут на место.</p>
+      <div class="chip reveal" style="--delay:.28s"><svg class="i"><use href="#i-pointer"/></svg>Проведите сквозь него</div>
+    </div>
+  </section>
+
+  <!-- 04 CYCLE -->
+  <section class="s-cycle">
+    <div class="wrap">
+      <div class="label reveal">[ 04 — Замкнутый цикл ]</div>
+      <h2 class="h-big reveal" style="--delay:.12s">А затем —<br>новая жизнь.</h2>
+      <p class="lead reveal" style="--delay:.24s">Связи рвутся, цепи распадаются на мономеры и уходят в переработку: собственная линия превращает отходы производства во вторичные гранулы для новой плёнки. Ничего лишнего.</p>
+    </div>
+  </section>
+</main>
+
+<footer id="contacts">
+  <div class="bloom a"></div><div class="bloom b"></div>
+  <div class="marquee" aria-hidden="true"><div class="track" id="track"></div></div>
+  <div class="f-body">
+    <div class="f-grid">
+      <div class="f-cta f-col">
+        <div class="f-label">[ Сотрудничество ]</div>
+        <h2 class="f-h">Нужна плёнка<br>под вашу задачу?</h2>
+        <a class="mail" href="mailto:dagpolymer@mail.ru">dagpolymer@mail.ru <span class="orb"><svg class="i"><use href="#i-upright"/></svg></span></a>
+        <a class="phone" href="tel:+79883090202">+7 (988) 309-02-02</a>
+      </div>
+      <div class="f-cols">
+        <div class="f-col" style="--delay:0s">
+          <div class="f-label">Продукция</div>
+          <ul>
+            <li><a href="/products/streych-plenka">Стрейч-плёнка<svg class="i"><use href="#i-upright"/></svg></a></li>
+            <li><a href="/products/termousadochnaya-plenka">Термоусадочная<svg class="i"><use href="#i-upright"/></svg></a></li>
+            <li><a href="/products/teplichnaya-plenka">Тепличная<svg class="i"><use href="#i-upright"/></svg></a></li>
+            <li><a href="/products">Вторичные гранулы<svg class="i"><use href="#i-upright"/></svg></a></li>
+          </ul>
+        </div>
+        <div class="f-col" style="--delay:.08s">
+          <div class="f-label">Компания</div>
+          <ul>
+            <li><a href="/production">Производство<svg class="i"><use href="#i-upright"/></svg></a></li>
+            <li><a href="/ecology">Экология<svg class="i"><use href="#i-upright"/></svg></a></li>
+            <li><a href="/about">О компании<svg class="i"><use href="#i-upright"/></svg></a></li>
+            <li><a href="/contacts">Контакты<svg class="i"><use href="#i-upright"/></svg></a></li>
+          </ul>
+        </div>
+        <div class="f-col" style="--delay:.16s">
+          <div class="f-label">Завод</div>
+          <ul>
+            <li class="plain">Республика Дагестан,<br>г. Каспийск,<br>Производственная ул., 5</li>
+            <li class="plain">Производство: 24/7<br>Офис: Пн–Пт, 9:00–18:00</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="f-bar">
+      <div class="f-brand"><b>ДАГПОЛИМЕР</b><i></i><small>© 2026 ДагПолимер — Все права защищены.</small></div>
+      <div class="socials">
+        <a href="tel:+79883090202" aria-label="Позвонить"><svg class="i"><use href="#i-phone"/></svg></a>
+        <a href="mailto:dagpolymer@mail.ru" aria-label="Написать"><svg class="i"><use href="#i-mail"/></svg></a>
+        <a href="https://yandex.ru/maps/?text=Каспийск%2C%20Производственная%20улица%2C%205" target="_blank" rel="noopener" aria-label="На карте"><svg class="i"><use href="#i-pin"/></svg></a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<!-- Drawer -->
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-label="Настройки сцены" aria-hidden="true">
+  <div class="d-head">
+    <div class="d-title"><svg class="i"><use href="#i-sliders"/></svg>Настройки сцены</div>
+    <button class="d-close" id="closeDrawer" aria-label="Закрыть"><svg class="i"><use href="#i-x"/></svg></button>
+  </div>
+  <p class="d-note">Цвет полимерных цепей на первом экране. При прокрутке сцена перетекает в прозрачный «лёд» плёнки, а затем — в зелёный цвет замкнутого цикла.</p>
+  <div class="d-sec"><svg class="i" style="width:12px;height:12px"><use href="#i-spark"/></svg>Палитра цепей</div>
+  <div class="themes" id="themes"></div>
+  <div class="d-foot">
+    <div class="d-row"><span>ДВИЖОК</span><span>THREE.JS WEBGL</span></div>
+    <div class="d-row"><span>ДИНАМИКА</span><span>VERLET · СВЯЗИ C–C / C–H</span></div>
+    <button class="d-reset" id="resetTheme"><svg class="i" style="width:13px;height:13px"><use href="#i-reset"/></svg>Сбросить</button>
+  </div>
+</aside>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* =========================================================
+   Shared state
+   ========================================================= */
+// the intro always plays from the first screen
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+window.scrollTo(0, 0);
+
+const control = { progress: 0, started: false };
+const mousePos = { x: 99, y: 99, isDown: false };
+
+/* =========================================================
+   Palettes — every chain picks a role, hydrogens take pastel
+   ========================================================= */
+const PRESETS = {
+  brand:    { name: 'Фирменный синий', desc: 'Глубокий кобальт ДагПолимер на светлом фоне цеха.', swatch: '#0A5BD6',
+              pal: { pastel: '#E8EEFB', light: '#8FB0F2', medium: '#0A5BD6', deep: '#0E3083', bond: '#DCE6FA' },
+              bg: 'radial-gradient(circle at center, #ffffff 0%, #eef3fd 35%, #c5d7f7 100%)' },
+  eco:      { name: 'Эко-зелёный', desc: 'Цвет замкнутого цикла и вторичных гранул.', swatch: '#1F9D4A',
+              pal: { pastel: '#EEF9F0', light: '#9EDDB0', medium: '#1F9D4A', deep: '#0C6B2A', bond: '#D9F0DF' },
+              bg: 'radial-gradient(circle at center, #ffffff 0%, #f0faf2 35%, #c9ead3 100%)' },
+  ice:      { name: 'Прозрачный лёд', desc: 'Холодные полупрозрачные цепи, как свежая стрейч-плёнка.', swatch: '#29B6D9',
+              pal: { pastel: '#EFFBFF', light: '#A6E4F5', medium: '#29B6D9', deep: '#0A6E99', bond: '#D8F2FA' },
+              bg: 'radial-gradient(circle at center, #ffffff 0%, #effbff 35%, #c4ecf8 100%)' },
+  graphite: { name: 'Графит', desc: 'Строгие тёмные цепи — классическая модель молекулы.', swatch: '#2B2F36',
+              pal: { pastel: '#F4F5F7', light: '#7A808A', medium: '#2B2F36', deep: '#111316', bond: '#C9CDD3' },
+              bg: 'radial-gradient(circle at center, #ffffff 0%, #f2f3f5 35%, #d3d6dc 100%)' },
+};
+const DEFAULT_PRESET = 'brand';
+const ROLES = ['pastel', 'light', 'medium', 'deep', 'bond'];
+const toPal = (p) => Object.fromEntries(ROLES.map(r => [r, new THREE.Color(p[r])]));
+
+/* =========================================================
+   Scene
+   ========================================================= */
+function createPolymerField({ container, canvas, onReady }) {
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(38, container.clientWidth / container.clientHeight, 0.1, 100);
+  camera.position.set(0, 0, 11);
+
+  let renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+  } catch (e) {
+    onReady();
+    return { setHero() {} };
+  }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.15;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  const hemiLight = new THREE.HemisphereLight(0xffffff, new THREE.Color('#0A5BD6'), 1.6);
+  scene.add(hemiLight);
+  const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
+  keyLight.position.set(-6, 10, 8);
+  keyLight.castShadow = true;
+  keyLight.shadow.mapSize.set(2048, 2048);
+  Object.assign(keyLight.shadow.camera, { near: 0.5, far: 30, left: -8, right: 8, top: 8, bottom: -8 });
+  keyLight.shadow.bias = -0.0003;
+  keyLight.shadow.radius = 12.0;
+  scene.add(keyLight);
+  const rimLight = new THREE.DirectionalLight(0xffffff, 1.25); rimLight.position.set(8, 7, -8); scene.add(rimLight);
+  const frontLight = new THREE.DirectionalLight(0xffffff, 0.4); frontLight.position.set(0, 0, 11); scene.add(frontLight);
+  const sideBounceLight = new THREE.DirectionalLight(0xffffff, 0.3); sideBounceLight.position.set(-9, -2, 4); scene.add(sideBounceLight);
+
+  let viewportWidth = 10, viewportHeight = 6;
+  const updateFrustumBounds = () => {
+    const fovRad = THREE.MathUtils.degToRad(camera.fov);
+    viewportHeight = 2 * Math.tan(fovRad / 2) * camera.position.z;
+    viewportWidth = viewportHeight * (container.clientWidth / container.clientHeight);
+  };
+  updateFrustumBounds();
+
+  /* ---------- Topology: polyethylene chains (–CH2–)n ---------- */
+  const isMobile = window.innerWidth < 768;
+  const CHAINS = isMobile ? 8 : 12;           // macromolecules
+  const PER = isMobile ? 14 : 20;              // carbons per chain
+  const NC = CHAINS * PER;                     // carbon atoms (simulated)
+  const NH = NC * 2;                           // hydrogens (kinematic, two per carbon)
+  const NCC = CHAINS * (PER - 1);              // C–C bonds
+  const NB = NCC + NH;                         // all bond sticks
+
+  const BOND = 0.44;      // C–C rest length
+  const CH = 0.30;        // C–H length
+  const R_C = 0.17;       // carbon radius
+  const R_H = 0.095;      // hydrogen radius
+  const R_BOND = 0.055;   // C–C stick radius
+  const R_BOND_H = 0.035; // C–H stick radius
+  const COLLIDE = 0.27;   // non-bonded collision radius per carbon
+
+  // per-chain colour role: more medium/deep, a few pale strands
+  const chainRole = [];
+  for (let c = 0; c < CHAINS; c++) {
+    const r = Math.random();
+    chainRole.push(r < 0.15 ? 'pastel' : r < 0.4 ? 'light' : r < 0.75 ? 'medium' : 'deep');
+  }
+
+  const carbonMat = new THREE.MeshPhysicalMaterial({ roughness: 0.34, metalness: 0, clearcoat: 0.55, clearcoatRoughness: 0.22, sheen: 0.4, sheenRoughness: 0.6 });
+  const hydroMat = new THREE.MeshPhysicalMaterial({
+    roughness: 0.08, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.03, transmission: 0.7, ior: 1.485, thickness: 0.6,
+    specularIntensity: 1, emissive: new THREE.Color('#ffffff'), emissiveIntensity: 0.06,
+  });
+  const bondMat = new THREE.MeshPhysicalMaterial({ roughness: 0.25, metalness: 0, clearcoat: 0.6, clearcoatRoughness: 0.2 });
+
+  const carbons = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 36, 36), carbonMat, NC);
+  const hydros = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 22, 22), hydroMat, NH);
+  const bonds = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 14, 1, true), bondMat, NB);
+  for (const m of [carbons, hydros, bonds]) {
+    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    m.castShadow = true; m.receiveShadow = true;
+    m.frustumCulled = false;
+    m.setColorAt(0, new THREE.Color()); // allocate instanceColor
+    scene.add(m);
+  }
+  hydros.castShadow = false;
+
+  // each macromolecule drifts around its own home inside a wide ellipse
+  const homeSeed = [];
+  for (let c = 0; c < CHAINS; c++) {
+    const a = (c / CHAINS) * Math.PI * 2 + Math.random() * 0.5, r = Math.sqrt(0.15 + Math.random() * 0.85);
+    homeSeed.push([Math.cos(a) * r, Math.sin(a) * r, (Math.random() - 0.5) * 2.4, Math.random() * Math.PI, Math.random() * 6]);
+  }
+
+  // simulation buffers (Verlet: position + previous position)
+  const P = new Float32Array(NC * 3);
+  const Q = new Float32Array(NC * 3);
+  const A = new Float32Array(NC * 3);
+  const HP = new Float32Array(NH * 3);
+  const vis = new Float32Array(NC).fill(1);  // per-atom visual scale (fade near lens)
+  const frame = new Float32Array(NC * 6);    // per-carbon normal + binormal for hydrogens
+
+  /* ---------- Entrance: chains parked far away, then fly in ---------- */
+  const scatterFar = (withInwardVelocity) => {
+    const R = Math.max(viewportWidth, viewportHeight) * 1.5;
+    for (let c = 0; c < CHAINS; c++) {
+      const a = Math.random() * Math.PI * 2;
+      const cx = Math.cos(a) * R * 1.25, cy = Math.sin(a) * R * 0.85, cz = (Math.random() - 0.5) * 4;
+      const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, (Math.random() - 0.5) * 0.4).normalize();
+      const speed = 0.08 + Math.random() * 0.05;
+      const v = new THREE.Vector3(-cx, -cy, -cz).normalize().multiplyScalar(withInwardVelocity ? speed : 0);
+      for (let j = 0; j < PER; j++) {
+        const i = (c * PER + j) * 3;
+        const s = (j - (PER - 1) / 2) * BOND;
+        // gentle zigzag so the chain starts with a backbone shape
+        const zz = (j % 2 ? 1 : -1) * 0.12;
+        P[i] = cx + dir.x * s; P[i + 1] = cy + dir.y * s + zz; P[i + 2] = cz + dir.z * s;
+        Q[i] = P[i] - v.x; Q[i + 1] = P[i + 1] - v.y; Q[i + 2] = P[i + 2] - v.z;
+      }
+    }
+  };
+  scatterFar(false);
+
+  /* ---------- Palette ---------- */
+  let palHero = toPal(PRESETS[DEFAULT_PRESET].pal);
+  const palIce = toPal(PRESETS.ice.pal);
+  const palEco = toPal(PRESETS.eco.pal);
+  const curPal = Object.fromEntries(ROLES.map(r => [r, new THREE.Color()]));
+  let lastPalKey = '';
+  const tmpCol = new THREE.Color();
+  const white = new THREE.Color('#ffffff');
+  const applyColors = () => {
+    for (let c = 0; c < CHAINS; c++) {
+      const col = curPal[chainRole[c]];
+      tmpCol.copy(col).lerp(curPal.bond, 0.55);
+      for (let j = 0; j < PER; j++) {
+        const i = c * PER + j;
+        carbons.setColorAt(i, col);
+        hydros.setColorAt(i * 2, curPal.pastel);
+        hydros.setColorAt(i * 2 + 1, curPal.pastel);
+        bonds.setColorAt(NCC + i * 2, curPal.bond);
+        bonds.setColorAt(NCC + i * 2 + 1, curPal.bond);
+        if (j < PER - 1) bonds.setColorAt(c * (PER - 1) + j, tmpCol);
+      }
+    }
+    carbons.instanceColor.needsUpdate = hydros.instanceColor.needsUpdate = bonds.instanceColor.needsUpdate = true;
+  };
+
+  /* ---------- Mouse in world space ---------- */
+  const params = { rebound: -0.3, mouseRepelForce: 0.05, mouseRepelRadius: 3.6, centerAttractForce: 0.0035 };
+  const mouseProjVec = new THREE.Vector3();
+  const mouseWorld3D = new THREE.Vector3();
+  const prevMouseWorld = new THREE.Vector3();
+  const updateMouse3D = () => {
+    mouseProjVec.set(mousePos.x, mousePos.y, 0.5).unproject(camera);
+    const dir = mouseProjVec.sub(camera.position).normalize();
+    const distance = -camera.position.z / dir.z;
+    mouseWorld3D.copy(camera.position).add(dir.multiplyScalar(distance));
+  };
+
+  const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+  const smoothstep = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+  /* ---------- Target layouts ---------- */
+  // Extrusion: chains drawn out into parallel rows — a sheet of oriented film.
+  const stretchTarget = (c, j, t, out) => {
+    // the sheet lies low and recedes in depth, like film leaving the die
+    const k = c - (CHAINS - 1) / 2;
+    const span = Math.min(viewportWidth * 0.94, BOND * 1.95 * (PER - 1));
+    const x = (j / (PER - 1) - 0.5) * span;
+    const wave = Math.sin(x * 0.55 - t * 1.4 + c * 0.18) * 0.22 + Math.sin(x * 1.3 + t * 0.9) * 0.05;
+    out[0] = x;
+    out[1] = -viewportHeight * 0.3 + k * 0.13 + wave + (j % 2 ? 0.06 : -0.06);
+    out[2] = -k * 0.42 + Math.cos(x * 0.5 - t * 1.4) * 0.2;
+  };
+  // Winding: every chain wraps once around a slowly spinning roll.
+  const portrait = () => viewportWidth < viewportHeight;
+  const rollR = () => portrait() ? Math.min(viewportWidth * 0.3, 1.45) : Math.min(viewportHeight * 0.2, viewportWidth * 0.24, 1.45);
+  const rollAxis = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0.32, -0.55, 0.12));
+  // on phones the roll stands upright so its length uses the tall screen
+  const rollAxisV = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0.25, 0.4, Math.PI / 2 + 0.1));
+  const rv = new THREE.Vector3();
+  const rollTarget = (c, j, t, out) => {
+    const R = rollR() + (j % 2 ? 0.06 : -0.06);
+    const ax = Math.min(0.4, (portrait() ? viewportHeight : viewportWidth) * 0.42 / CHAINS);
+    const th = (j / PER) * Math.PI * 2 + t * 0.55 + c * 0.11;
+    rv.set((c - (CHAINS - 1) / 2) * ax, Math.cos(th) * R, Math.sin(th) * R).applyMatrix4(portrait() ? rollAxisV : rollAxis);
+    out[0] = rv.x - (viewportWidth > viewportHeight ? viewportWidth * 0.06 : 0); out[1] = rv.y - viewportHeight * 0.03; out[2] = rv.z;
+  };
+
+  /* ---------- Loop ---------- */
+  const clock = new THREE.Clock();
+  let localStarted = false, entranceStart = 0, reportedReady = false;
+  const tgt = [0, 0, 0];
+  const tA = new THREE.Vector3(), nA = new THREE.Vector3(), bA = new THREE.Vector3(), up = new THREE.Vector3();
+  const mArr = () => [carbons.instanceMatrix.array, hydros.instanceMatrix.array, bonds.instanceMatrix.array];
+
+  // writes a cylinder from point (ax,ay,az) to (bx,by,bz) into bond slot k
+  const writeStick = (arr, k, ax, ay, az, bx, by, bz, radius) => {
+    let dx = bx - ax, dy = by - ay, dz = bz - az;
+    const len = Math.hypot(dx, dy, dz) || 1e-6;
+    dx /= len; dy /= len; dz /= len;
+    // perpendicular basis
+    let px, py, pz;
+    if (Math.abs(dy) < 0.9) { px = dz; py = 0; pz = -dx; } else { px = 0; py = -dz; pz = dy; }
+    const pl = Math.hypot(px, py, pz); px /= pl; py /= pl; pz /= pl;
+    const qx = dy * pz - dz * py, qy = dz * px - dx * pz, qz = dx * py - dy * px;
+    const o = k * 16;
+    arr[o] = px * radius; arr[o + 1] = py * radius; arr[o + 2] = pz * radius; arr[o + 3] = 0;
+    arr[o + 4] = dx * len; arr[o + 5] = dy * len; arr[o + 6] = dz * len; arr[o + 7] = 0;
+    arr[o + 8] = qx * radius; arr[o + 9] = qy * radius; arr[o + 10] = qz * radius; arr[o + 11] = 0;
+    arr[o + 12] = (ax + bx) / 2; arr[o + 13] = (ay + by) / 2; arr[o + 14] = (az + bz) / 2; arr[o + 15] = 1;
+  };
+  const writeBall = (arr, k, x, y, z, s) => {
+    const o = k * 16;
+    arr[o] = s; arr[o + 1] = 0; arr[o + 2] = 0; arr[o + 3] = 0;
+    arr[o + 4] = 0; arr[o + 5] = s; arr[o + 6] = 0; arr[o + 7] = 0;
+    arr[o + 8] = 0; arr[o + 9] = 0; arr[o + 10] = s; arr[o + 11] = 0;
+    arr[o + 12] = x; arr[o + 13] = y; arr[o + 14] = z; arr[o + 15] = 1;
+  };
+
+  const simulateAndRender = () => {
+    requestAnimationFrame(simulateAndRender);
+    const time = clock.getElapsedTime();
+    updateMouse3D();
+
+    if (control.started && !localStarted) {
+      localStarted = true; entranceStart = time; scatterFar(true);
+    }
+
+    const progress = localStarted ? control.progress : 0;
+
+    // --- mode blend factors ---
+    const heroF = 1 - smoothstep(0.30, 0.80, progress);
+    const stretchF = smoothstep(0.40, 0.95, progress) * (1 - smoothstep(1.25, 1.75, progress));
+    const shapeF = smoothstep(1.40, 2.05, progress) * (1 - smoothstep(2.55, 3.0, progress));
+    const breakF = smoothstep(2.6, 3.05, progress);   // depolymerisation: C–C bonds dissolve
+    const flyF = smoothstep(2.7, 3.45, progress);
+    const orderF = Math.max(stretchF, shapeF);
+
+    // --- palette morph: hero → ice film → eco green ---
+    const bIce = smoothstep(0.55, 1.05, progress);
+    const bEco = smoothstep(1.40, 1.95, progress);
+    const palKey = bIce.toFixed(3) + bEco.toFixed(3) + palHero.medium.getHexString();
+    if (palKey !== lastPalKey) {
+      lastPalKey = palKey;
+      for (const r of ROLES) curPal[r].copy(palHero[r]).lerp(palIce[r], bIce).lerp(palEco[r], bEco);
+      hemiLight.groundColor.copy(curPal.medium);
+      applyColors();
+    }
+
+    if (localStarted) {
+      const entranceT = easeOutCubic(clamp01((time - entranceStart) / 2.2));
+      const attractionBoost = lerp(7.5, 1, entranceT);
+      const clusterActive = Math.max(heroF, entranceT < 1 ? 1 : 0);
+
+      const isMouseInteracting = Math.abs(mousePos.x) < 0.99 || Math.abs(mousePos.y) < 0.99;
+      let mouseSpeed = isMouseInteracting ? mouseWorld3D.distanceTo(prevMouseWorld) : 0;
+      if (mouseSpeed > 3) mouseSpeed = 3;
+      prevMouseWorld.copy(mouseWorld3D);
+
+      let damping = 0.91;
+      damping = lerp(damping, 0.90, orderF);
+      damping = lerp(damping, 0.985, flyF);
+
+      const down = mousePos.isDown;
+      const repelR = down ? params.mouseRepelRadius * 1.4 : params.mouseRepelRadius;
+      const repelF = (down ? params.mouseRepelForce * 1.7 : params.mouseRepelForce) * (1 + mouseSpeed * 3.2);
+      const clusterStrength = params.centerAttractForce * attractionBoost * clusterActive;
+
+      // 1. FORCES + VERLET INTEGRATION
+      for (let c = 0; c < CHAINS; c++) {
+        for (let j = 0; j < PER; j++) {
+          const id = c * PER + j, i = id * 3;
+          let ax = 0, ay = 0, az = 0;
+          const x = P[i], y = P[i + 1], z = P[i + 2];
+
+          // thermal motion — chains writhe like real macromolecules in a melt
+          if (heroF > 0.01) {
+            const w = 0.0011 * heroF;
+            ax += Math.sin(time * 0.9 + id * 1.7 + c) * w;
+            ay += Math.cos(time * 1.1 + id * 1.3) * w;
+            az += Math.sin(time * 0.7 + id * 0.9) * w * 0.4;
+          }
+          if (clusterStrength > 0.00001) {
+            const h = homeSeed[c];
+            // home is a slowly curling line, so each chain stays a readable worm-like coil
+            const u = (j - (PER - 1) / 2) * BOND * 0.42;
+            const phi = h[3] + Math.sin(time * 0.2 + c) * 0.4;
+            const curl = Math.sin(j * 0.55 + time * 0.6 + h[4]) * 0.38;
+            const hx = h[0] * Math.min(viewportWidth * 0.24, 3.6) + Math.cos(phi) * u - Math.sin(phi) * curl;
+            const hy = h[1] * viewportHeight * 0.13 + viewportHeight * 0.1 + Math.sin(phi) * u + Math.cos(phi) * curl;
+            ax += (hx - x) * clusterStrength * 0.5;
+            ay += (hy - y) * clusterStrength * 0.9;
+            az += (h[2] - z) * clusterStrength * 0.9;
+          }
+          if (stretchF > 0.001) {
+            stretchTarget(c, j, time, tgt);
+            const k = 0.06 * stretchF;
+            ax += (tgt[0] - x) * k; ay += (tgt[1] - y) * k; az += (tgt[2] - z) * k;
+          }
+          if (shapeF > 0.001) {
+            rollTarget(c, j, time, tgt);
+            const k = 0.06 * shapeF;
+            ax += (tgt[0] - x) * k; ay += (tgt[1] - y) * k; az += (tgt[2] - z) * k;
+          }
+          if (flyF > 0.001) {
+            const stagger = (id * 0.6180339887) % 1;
+            const local = smoothstep(stagger * 0.55, stagger * 0.55 + 0.45, flyF);
+            az += 0.05 * local;
+            ax += x * 0.006 * local;
+            ay += y * 0.006 * local;
+          }
+          if (isMouseInteracting) {
+            let dx = x - mouseWorld3D.x, dy = y - mouseWorld3D.y, dz = z - mouseWorld3D.z;
+            const d = Math.hypot(dx, dy, dz);
+            if (d < repelR && d > 0.0001) {
+              const ratio = d / repelR;
+              const push = (1 - ratio * ratio * (3 - 2 * ratio)) * repelF;
+              dz *= 0.12;
+              const n = Math.hypot(dx, dy, dz);
+              ax += (dx / n) * push; ay += (dy / n) * push; az += (dz / n) * push;
+            }
+          }
+
+          const vx = (x - Q[i]) * damping, vy = (y - Q[i + 1]) * damping, vz = (z - Q[i + 2]) * damping;
+          Q[i] = x; Q[i + 1] = y; Q[i + 2] = z;
+          P[i] = x + vx + ax; P[i + 1] = y + vy + ay; P[i + 2] = z + vz + az;
+        }
+      }
+
+      // 2. CONSTRAINTS: covalent bonds, bond angle (~112°), excluded volume
+      const stretchRatio = Math.min(viewportWidth * 0.94, BOND * 1.95 * (PER - 1)) / ((PER - 1) * BOND);
+      const rollL = (2 * Math.PI * rollR()) / PER;
+      let rest = BOND * lerp(1, stretchRatio, stretchF);
+      rest = lerp(rest, rollL, shapeF);
+      const kBond = 0.9 * (1 - breakF);
+      const angleRest = rest * lerp(1.66, 1.97, orderF);
+      const kAngle = lerp(0.3, 0.12, orderF) * (1 - breakF);
+      const collideScale = 0.5 * (1 - 0.9 * orderF) * (1 - flyF);
+      const minD = COLLIDE * 2;
+
+      const link = (a, b, L, k) => {
+        const dx = P[b] - P[a], dy = P[b + 1] - P[a + 1], dz = P[b + 2] - P[a + 2];
+        const d = Math.hypot(dx, dy, dz);
+        if (d < 1e-6) return;
+        const f = ((d - L) / d) * 0.5 * k;
+        P[a] += dx * f; P[a + 1] += dy * f; P[a + 2] += dz * f;
+        P[b] -= dx * f; P[b + 1] -= dy * f; P[b + 2] -= dz * f;
+      };
+
+      for (let step = 0; step < 3; step++) {
+        if (kBond > 0.001) {
+          for (let c = 0; c < CHAINS; c++) {
+            const base = c * PER;
+            for (let j = 0; j < PER - 1; j++) link((base + j) * 3, (base + j + 1) * 3, rest, kBond);
+            if (kAngle > 0.001) for (let j = 0; j < PER - 2; j++) link((base + j) * 3, (base + j + 2) * 3, angleRest, kAngle);
+          }
+        }
+        if (collideScale > 0.001) {
+          for (let a = 0; a < NC; a++) {
+            const ia = a * 3, ca = (a / PER) | 0, ja = a - ca * PER;
+            for (let b = a + 1; b < NC; b++) {
+              const ib = b * 3;
+              const dx = P[ib] - P[ia];
+              if (dx > minD || dx < -minD) continue;
+              const dy = P[ib + 1] - P[ia + 1];
+              if (dy > minD || dy < -minD) continue;
+              const cb = (b / PER) | 0;
+              if (ca === cb && b - cb * PER - ja <= 2) continue; // bonded neighbours
+              const dz = P[ib + 2] - P[ia + 2];
+              const d2 = dx * dx + dy * dy + dz * dz;
+              if (d2 < minD * minD && d2 > 1e-6) {
+                const d = Math.sqrt(d2);
+                const f = ((minD - d) / d) * 0.5 * collideScale;
+                P[ia] -= dx * f; P[ia + 1] -= dy * f; P[ia + 2] -= dz * f;
+                P[ib] += dx * f; P[ib + 1] += dy * f; P[ib + 2] += dz * f;
+              }
+            }
+          }
+        }
+      }
+
+      // 3. VIEWPORT WALLS
+      const xBound = viewportWidth / 2 - 0.2;
+      const topY = viewportHeight / 2 - 0.05, floorY = -viewportHeight / 2 + 0.05;
+      const contain = flyF < 0.5, zContain = flyF < 0.02;
+      for (let id = 0; id < NC; id++) {
+        const i = id * 3;
+        if (contain) {
+          if (P[i] < -xBound - R_C) { const v = P[i] - Q[i]; P[i] = -xBound - R_C; Q[i] = P[i] + v * params.rebound; }
+          else if (P[i] > xBound + R_C) { const v = P[i] - Q[i]; P[i] = xBound + R_C; Q[i] = P[i] + v * params.rebound; }
+          if (P[i + 1] - R_C < floorY) { const v = P[i + 1] - Q[i + 1]; P[i + 1] = floorY + R_C; Q[i + 1] = P[i + 1] + v * 0.3; }
+          else if (P[i + 1] + R_C > topY) { const v = P[i + 1] - Q[i + 1]; P[i + 1] = topY - R_C; Q[i + 1] = P[i + 1] + v * 0.3; }
+        }
+        if (zContain) {
+          if (P[i + 2] < -2) { const v = P[i + 2] - Q[i + 2]; P[i + 2] = -2; Q[i + 2] = P[i + 2] + v * params.rebound; }
+          else if (P[i + 2] > 2) { const v = P[i + 2] - Q[i + 2]; P[i + 2] = 2; Q[i + 2] = P[i + 2] + v * params.rebound; }
+        }
+      }
+    }
+
+    // 4. VISUALS: carbons, hydrogens (local frame, parallel-transported), sticks
+    const camZ = camera.position.z;
+    const [cA, hA, bA2] = mArr();
+    for (let c = 0; c < CHAINS; c++) {
+      nA.set(0, 0, 1);
+      for (let j = 0; j < PER; j++) {
+        const id = c * PER + j, i = id * 3;
+        const prv = j > 0 ? i - 3 : i, nxt = j < PER - 1 ? i + 3 : i;
+        tA.set(P[nxt] - P[prv], P[nxt + 1] - P[prv + 1], P[nxt + 2] - P[prv + 2]);
+        if (tA.lengthSq() < 1e-8) tA.set(1, 0, 0);
+        tA.normalize();
+        // transport previous normal onto this tangent → no flipping along the chain
+        nA.addScaledVector(tA, -nA.dot(tA));
+        if (nA.lengthSq() < 1e-6) { up.set(0, 1, 0); nA.crossVectors(tA, up); if (nA.lengthSq() < 1e-6) nA.set(1, 0, 0); }
+        nA.normalize();
+        bA.crossVectors(tA, nA);
+
+        const s = flyF > 0.001 ? 1 - smoothstep(camZ - 2.6, camZ - 0.3, P[i + 2]) : 1;
+        vis[id] = s;
+        writeBall(cA, id, P[i], P[i + 1], P[i + 2], R_C * s);
+
+        // two hydrogens point away from the zigzag, spread ±55° about the normal
+        const side = j % 2 ? 1 : -1;
+        for (let h = 0; h < 2; h++) {
+          const sg = h ? 1 : -1;
+          const dx = nA.x * side * 0.57 + bA.x * sg * 0.82;
+          const dy = nA.y * side * 0.57 + bA.y * sg * 0.82;
+          const dz = nA.z * side * 0.57 + bA.z * sg * 0.82;
+          const k = id * 2 + h, o = k * 3;
+          HP[o] = P[i] + dx * CH; HP[o + 1] = P[i + 1] + dy * CH; HP[o + 2] = P[i + 2] + dz * CH;
+          writeBall(hA, k, HP[o], HP[o + 1], HP[o + 2], R_H * s);
+          writeStick(bA2, NCC + k, P[i], P[i + 1], P[i + 2], HP[o], HP[o + 1], HP[o + 2], R_BOND_H * s);
+        }
+      }
+      for (let j = 0; j < PER - 1; j++) {
+        const id = c * PER + j, i = id * 3;
+        // C–C sticks thin out and vanish as the chain depolymerises
+        const s = Math.min(vis[id], vis[id + 1]) * (1 - breakF);
+        writeStick(bA2, c * (PER - 1) + j, P[i], P[i + 1], P[i + 2], P[i + 3], P[i + 4], P[i + 5], R_BOND * s);
+      }
+    }
+    carbons.instanceMatrix.needsUpdate = hydros.instanceMatrix.needsUpdate = bonds.instanceMatrix.needsUpdate = true;
+
+    renderer.render(scene, camera);
+    if (!reportedReady) { reportedReady = true; onReady(); }
+  };
+  simulateAndRender();
+
+  new ResizeObserver(() => {
+    const width = container.clientWidth, height = container.clientHeight;
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    renderer.setSize(width, height);
+    updateFrustumBounds();
+  }).observe(container);
+
+  return {
+    setHero(key) { palHero = toPal(PRESETS[key].pal); lastPalKey = ''; },
+  };
+}
+
+/* =========================================================
+   Loader
+   ========================================================= */
+const loader = document.getElementById('loader');
+const loaderFill = document.getElementById('loaderFill');
+const loaderCount = document.getElementById('loaderCount');
+const loaderStatus = document.getElementById('loaderStatus');
+const loaderMol = document.getElementById('loaderMol');
+
+// little chain that assembles atom by atom as the bar fills
+const MOL_N = 7;
+{
+  let svg = '';
+  for (let k = 0; k < MOL_N; k++) {
+    const x = 10 + k * 16.6, y = k % 2 ? 11 : 23, hy = k % 2 ? 2 : 32;
+    const next = k < MOL_N - 1 ? `<line x1="${x}" y1="${y}" x2="${x + 16.6}" y2="${k % 2 ? 23 : 11}"/>` : '';
+    svg += `<g>${next}<line x1="${x}" y1="${y}" x2="${x}" y2="${hy}" style="stroke-width:1.4"/><circle class="h" cx="${x}" cy="${hy}" r="2.4"/><circle class="c" cx="${x}" cy="${y}" r="4.6"/></g>`;
+  }
+  loaderMol.innerHTML = svg;
+}
+const molGroups = loaderMol.querySelectorAll('g');
+requestAnimationFrame(() => loader.classList.add('in'));
+
+let sceneReady = false;
+let loaderValue = 0, loaderLast = performance.now(), loaderFinishing = false;
+const tickLoader = (now) => {
+  const dt = Math.min(0.05, (now - loaderLast) / 1000);
+  loaderLast = now;
+  if (!sceneReady) loaderValue += (92 - loaderValue) * 1.7 * dt;
+  else { loaderValue += (100 - loaderValue) * 6 * dt; if (loaderValue >= 99.4) loaderValue = 100; }
+  const v = Math.round(loaderValue);
+  loaderFill.style.width = loaderValue + '%';
+  loaderCount.textContent = String(v).padStart(3, '0') + '%';
+  loaderStatus.textContent = v < 100 ? 'Синтез полимерной цепи' : 'Запуск экструзии';
+  molGroups.forEach((g, k) => g.classList.toggle('lit', loaderValue >= ((k + 1) / MOL_N) * 100 - 0.5));
+  if (loaderValue >= 99.9 && sceneReady && !loaderFinishing) {
+    loaderFinishing = true;
+    setTimeout(() => loader.classList.add('leaving'), 140);
+    setTimeout(onLoaderDone, 140 + 520);
+    return;
+  }
+  requestAnimationFrame(tickLoader);
+};
+requestAnimationFrame(tickLoader);
+
+function onLoaderDone() {
+  control.started = true;
+  document.body.classList.add('revealed');
+  loader.style.display = 'none';
+}
+
+/* =========================================================
+   Scene boot
+   ========================================================= */
+const field = createPolymerField({
+  container: document.getElementById('stage'),
+  canvas: document.getElementById('gl'),
+  onReady: () => { sceneReady = true; },
+});
+
+/* =========================================================
+   Smooth scroll (Lenis-style)
+   ========================================================= */
+let target = window.scrollY, current = window.scrollY, smoothing = false;
+const maxScroll = () => document.documentElement.scrollHeight - window.innerHeight;
+window.addEventListener('wheel', (e) => {
+  if (e.ctrlKey || document.getElementById('drawer').classList.contains('open')) return;
+  e.preventDefault();
+  const mult = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
+  if (!smoothing) { target = current = window.scrollY; }
+  target = Math.max(0, Math.min(maxScroll(), target + e.deltaY * mult));
+  smoothing = true;
+}, { passive: false });
+const smoothTick = () => {
+  if (smoothing) {
+    current += (target - current) * 0.09;
+    if (Math.abs(target - current) < 0.5) { current = target; smoothing = false; }
+    window.scrollTo(0, current);
+  }
+  requestAnimationFrame(smoothTick);
+};
+requestAnimationFrame(smoothTick);
+// keyboard / scrollbar / touch keep native behaviour
+window.addEventListener('scroll', () => { if (!smoothing) target = current = window.scrollY; }, { passive: true });
+
+/* =========================================================
+   Scroll → progress, background stage
+   ========================================================= */
+const bgLayers = [document.getElementById('bg0'), document.getElementById('bg1'), document.getElementById('bg2')];
+let bgStage = -1, scrollQueued = false;
+const onScroll = () => {
+  scrollQueued = false;
+  const vh = window.innerHeight || 1;
+  const progress = window.scrollY / vh;
+  control.progress = progress;
+  const stage = progress > 1.55 ? 2 : progress > 0.7 ? 1 : 0;
+  if (stage !== bgStage) { bgStage = stage; bgLayers.forEach((l, k) => l.classList.toggle('on', k === stage)); }
+};
+const queueScroll = () => { if (!scrollQueued) { scrollQueued = true; requestAnimationFrame(onScroll); } };
+window.addEventListener('scroll', queueScroll, { passive: true });
+window.addEventListener('resize', queueScroll);
+onScroll();
+
+/* =========================================================
+   Pointer
+   ========================================================= */
+window.addEventListener('pointermove', (e) => {
+  mousePos.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mousePos.y = -(e.clientY / window.innerHeight) * 2 + 1;
+});
+window.addEventListener('mousedown', () => (mousePos.isDown = true));
+window.addEventListener('mouseup', () => (mousePos.isDown = false));
+document.documentElement.addEventListener('pointerleave', () => { mousePos.x = 99; mousePos.y = 99; });
+
+/* =========================================================
+   Reveals
+   ========================================================= */
+const io = new IntersectionObserver((entries) => {
+  for (const e of entries) if (e.isIntersecting) { e.target.classList.add('shown'); io.unobserve(e.target); }
+}, { threshold: 0.45 });
+document.querySelectorAll('.reveal, .f-col').forEach((el) => io.observe(el));
+
+/* =========================================================
+   Marquee
+   ========================================================= */
+{
+  const words = ['Стрейч-плёнка', 'Термоусадочная плёнка', 'Тепличная плёнка', 'Вторичные гранулы'];
+  const seq = words.map((w) => `<span class="w">${w}</span><svg class="mono"><use href="#i-mono"/></svg>`).join('');
+  document.getElementById('track').innerHTML = `<span>${seq}</span><span>${seq}</span>`;
+}
+
+/* =========================================================
+   Drawer — chain palette
+   ========================================================= */
+const drawer = document.getElementById('drawer');
+const scrim = document.getElementById('scrim');
+const themesEl = document.getElementById('themes');
+let selected = DEFAULT_PRESET;
+const setDrawer = (open) => {
+  drawer.classList.toggle('open', open);
+  scrim.classList.toggle('open', open);
+  drawer.setAttribute('aria-hidden', String(!open));
+};
+const renderThemes = () => {
+  themesEl.innerHTML = Object.entries(PRESETS).map(([id, p]) => `
+    <button class="theme${id === selected ? ' sel' : ''}" data-id="${id}">
+      <div class="theme-top"><span>${p.name}</span><i style="background:${p.swatch}"></i></div>
+      <p>${p.desc}</p>
+    </button>`).join('');
+};
+const selectTheme = (id) => {
+  selected = id;
+  field.setHero(id);
+  bgLayers[0].style.background = PRESETS[id].bg;
+  renderThemes();
+};
+themesEl.addEventListener('click', (e) => { const b = e.target.closest('.theme'); if (b) selectTheme(b.dataset.id); });
+document.getElementById('openDrawer').addEventListener('click', () => setDrawer(true));
+document.getElementById('closeDrawer').addEventListener('click', () => setDrawer(false));
+scrim.addEventListener('click', () => setDrawer(false));
+document.getElementById('resetTheme').addEventListener('click', () => selectTheme(DEFAULT_PRESET));
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape') setDrawer(false); });
+selectTheme(DEFAULT_PRESET);
+</script>
+</body>
+</html>
