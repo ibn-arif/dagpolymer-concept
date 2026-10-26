@@ -63,7 +63,8 @@
     -webkit-mask-image: radial-gradient(circle at center, transparent 30%, #000 100%);
   }
 
-  #stage { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  /* sized to the large viewport: iOS toolbar show/hide must not resize (and blank) the canvas */
+  #stage { position: fixed; top: 0; left: 0; width: 100%; height: 100vh; height: 100lvh; z-index: 0; pointer-events: none; }
   #stage canvas { display: block; width: 100%; height: 100%; }
 
   /* ---------- Loader ---------- */
@@ -691,7 +692,7 @@ function createPolymerField({ container, canvas, onReady }) {
 
   /* ---------- Loop ---------- */
   const clock = new THREE.Clock();
-  let localStarted = false, entranceStart = 0, reportedReady = false;
+  let localStarted = false, entranceStart = 0, reportedReady = false, wasInteracting = false;
   const tgt = [0, 0, 0];
   const tA = new THREE.Vector3(), nA = new THREE.Vector3(), bA = new THREE.Vector3(), up = new THREE.Vector3();
   const mArr = () => [carbons.instanceMatrix.array, hydros.instanceMatrix.array, bonds.instanceMatrix.array];
@@ -756,7 +757,9 @@ function createPolymerField({ container, canvas, onReady }) {
       const clusterActive = Math.max(heroF, entranceT < 1 ? 1 : 0);
 
       const isMouseInteracting = Math.abs(mousePos.x) < 0.99 || Math.abs(mousePos.y) < 0.99;
-      let mouseSpeed = isMouseInteracting ? mouseWorld3D.distanceTo(prevMouseWorld) : 0;
+      // no momentum on the first frame a pointer appears (it would be measured from off-screen)
+      let mouseSpeed = isMouseInteracting && wasInteracting ? mouseWorld3D.distanceTo(prevMouseWorld) : 0;
+      wasInteracting = isMouseInteracting;
       if (mouseSpeed > 3) mouseSpeed = 3;
       prevMouseWorld.copy(mouseWorld3D);
 
@@ -949,12 +952,16 @@ function createPolymerField({ container, canvas, onReady }) {
   };
   simulateAndRender();
 
+  let lastW = container.clientWidth, lastH = container.clientHeight;
   new ResizeObserver(() => {
     const width = container.clientWidth, height = container.clientHeight;
+    if (width === lastW && height === lastH) return;
+    lastW = width; lastH = height;
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     renderer.setSize(width, height);
     updateFrustumBounds();
+    renderer.render(scene, camera); // setSize clears the canvas — redraw now, not next frame
   }).observe(container);
 
   return {
@@ -999,7 +1006,7 @@ const tickLoader = (now) => {
   molGroups.forEach((g, k) => g.classList.toggle('lit', loaderValue >= ((k + 1) / MOL_N) * 100 - 0.5));
   if (loaderValue >= 99.9 && sceneReady && !loaderFinishing) {
     loaderFinishing = true;
-    setTimeout(() => loader.classList.add('leaving'), 140);
+    setTimeout(() => { loader.classList.add('leaving'); control.started = true; }, 140);
     setTimeout(onLoaderDone, 140 + 520);
     return;
   }
@@ -1068,13 +1075,20 @@ onScroll();
 /* =========================================================
    Pointer
    ========================================================= */
-window.addEventListener('pointermove', (e) => {
+const stageEl = document.getElementById('stage');
+const setPointer = (e) => {
   mousePos.x = (e.clientX / window.innerWidth) * 2 - 1;
-  mousePos.y = -(e.clientY / window.innerHeight) * 2 + 1;
-});
+  mousePos.y = -(e.clientY / (stageEl.clientHeight || window.innerHeight)) * 2 + 1;
+};
+const releasePointer = () => { mousePos.x = 99; mousePos.y = 99; };
+window.addEventListener('pointermove', (e) => { if (e.pointerType !== 'touch') setPointer(e); });
+// on phones a lingering touch point used to keep blasting the field apart while scrolling
+window.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') setPointer(e); });
+window.addEventListener('pointerup', (e) => { if (e.pointerType === 'touch') releasePointer(); });
+window.addEventListener('pointercancel', releasePointer);
 window.addEventListener('mousedown', () => (mousePos.isDown = true));
 window.addEventListener('mouseup', () => (mousePos.isDown = false));
-document.documentElement.addEventListener('pointerleave', () => { mousePos.x = 99; mousePos.y = 99; });
+document.documentElement.addEventListener('pointerleave', releasePointer);
 
 /* =========================================================
    Reveals
